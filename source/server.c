@@ -63,10 +63,8 @@ void main(int argc, char* argv[]){
     ret = bind(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
     if (ret) handle_error("ERROR DURING SOCKET BINDING");
 
-    // Start listening
+    // Socket starts listening
     ret = listen(socket_desc, MAX_CONN_QUEUE);
     if (ret) handle_error("ERROR DURING SOCKET LISTENING");
-    fprintf(stdout, "Socket is now listening on IP address %s on port %d...\n", inet_ntoa(server_addr.sin_addr), server_addr.sin_port);
-
-
+    fprintf(stdout, "Socket is now listening on IP address %s on port %d...\n", inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port));
 }
