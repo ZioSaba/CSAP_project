@@ -1,11 +1,10 @@
 CC = gcc -g
 SERVER_CODE = ./source/server.c
 CLIENT_CODE = ./source/client.c
-WORKER_CODE = ./source/worker.c
 COMMONS = ./source/commons.h
 
 
-all: server client worker
+all: server client
 
 
 server: $(SERVER_CODE) $(COMMONS)
