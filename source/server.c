@@ -11,17 +11,19 @@
 
 
 void handle_error(char* err_msg){
-
+    perror(err_msg);
+    exit(1);
 }
 
 
 void main(int argc, char* argv[]){
 
-    for (int i = 0; i < argc; i++){
-        printf("Contentuto di argv[%d] = %s", i, argv[i]);
-    }
+    // Defining variables
+    int socket_desc;                        // Socket descriptor for the server
+    struct sockaddr_in server_addr = {0};   // Initialize all fields to zero
 
-    bool isDefault;
+    bool isDefault;                         // Use to verify whether the executable has been invoked as default or customized
+    int ret;                                // Used to check result of BIND and LISTEN operations
 
     if (argc == 1){
         fprintf(stdout, "Server will run using default configuration...\n");
@@ -40,30 +42,31 @@ void main(int argc, char* argv[]){
 	    exit(1);
     }
 
-    // Defining variables
-    int socket_desc;
-    struct sockaddr_in server_addr = {0};   // Initialize all fields to zero
 
     // Create socket
     socket_desc = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_desc < 0) handle_error("ERROR! Cannot create socket!");
+    if (socket_desc < 0) handle_error("ERROR DURING SOCKET CREATION");
 
     if (isDefault){
-        server_addr.sin_addr.s_addr = htonl(SERVER_ADDRESS);
+        server_addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(SERVER_PORT);
     }
+
     else{
-        server_addr.sin_addr.s_addr = htonl(argv[1]);
+        server_addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
         server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(argv[2]);
+        server_addr.sin_port = htons(atoi(argv[1]));
     }
 
-
     // Binding socket
+    ret = bind(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
+    if (ret) handle_error("ERROR DURING SOCKET BINDING");
 
     // Start listening
-
+    ret = listen(socket_desc, MAX_CONN_QUEUE);
+    if (ret) handle_error("ERROR DURING SOCKET LISTENING");
+    fprintf(stdout, "Socket is now listening on IP address %s on port %d...\n", inet_ntoa(server_addr.sin_addr), server_addr.sin_port);
 
 
 }

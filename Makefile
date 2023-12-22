@@ -1,15 +1,19 @@
 CC = gcc -g
+SERVER_CODE = ./source/server.c
+CLIENT_CODE = ./source/client.c
+WORKER_CODE = ./source/worker.c
+COMMONS = ./source/commons.h
 
 
 all: server client worker
 
 
-server: server.c commons.h
-	$(CC) -o run_server server.c
+server: $(SERVER_CODE) $(COMMONS)
+	$(CC) -o run_server $(SERVER_CODE)
 
 
-client: client.c commons.h
-	$(CC) -o run_client client.c 
+client: $(CLIENT_CODE) $(COMMONS)
+	$(CC) -o run_client $(CLIENT_CODE)
 
 
 clean:
