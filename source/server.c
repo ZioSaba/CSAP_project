@@ -48,7 +48,7 @@ void main(int argc, char* argv[]){
                                             // 1 if only port number is provided
                                             // 2 if only log location is provided
 
-    int ret;                                // Used to check result of BIND and LISTEN operations
+    int ret;                                // Used to check result of various operations
     
 
     // Checking command line parameters
@@ -89,7 +89,7 @@ void main(int argc, char* argv[]){
     if (socket_desc < 0) HANDLE_ERROR("ERROR! SOCKET CREATION - MAIN");
 
     host_info = gethostbyname(SERVER_ADDRESS);
-    server_addr.sin_addr.s_addr = *((unsigned long *)host_info->h_addr_list[0]);
+    server_addr.sin_addr.s_addr = *((unsigned long* )host_info->h_addr_list[0]);
     server_addr.sin_family = AF_INET;
 
     if (isDefault || isPartialCustom == 2) server_addr.sin_port = htons(SERVER_PORT);
@@ -128,7 +128,7 @@ void main(int argc, char* argv[]){
     else{
         total_length = strlen(argv[1]) + strlen(LOG_NAME)+1;
         path = (char*) calloc(total_length, sizeof(char));
-        if (path == NULL) HANDLE_ERROR("ERROR! DEFAULT PATH MALLOC - MAIN");
+        if (path == NULL) HANDLE_ERROR("ERROR! CUSTOM PATH MALLOC - MAIN");
         snprintf(path, total_length, "%s%s", argv[1], LOG_NAME);
     }
 
@@ -142,10 +142,22 @@ void main(int argc, char* argv[]){
             HANDLE_ERROR("ERROR! CANNOT CREATE LOGFILE - MAIN");
     }
     
-    fprintf(stdout, "Created log file in %s\n", path);
+    fprintf(stdout, "Opened log file in %s\n", path);
     free(path);
 
-    exit(1);
+
+    // Server prints log start timestamp
+    time_t ltime;
+    char date[27];
+    char* timestamp = "The server started logging as of ";
+    time(&ltime);
+    ctime_r(&ltime, date);
+    printf("Contenuto di date = %s", date);
+    ret = write(logfile_fd, timestamp, strlen(timestamp));
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT WRITE LOG SESSION START MESSAGE - MAIN");
+    ret = write(logfile_fd, date, strlen(date));
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT WRITE LOG SESSION TIMESTAMP - MAIN");
+    
 
     // Invoke looping function
     initiate_server_transmission(socket_desc, logfile_fd);
