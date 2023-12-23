@@ -30,6 +30,28 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
         else if (client_desc < 0) HANDLE_ERROR("ERROR! CANNOT OPEN SOCKET FOR INCOMING CONNECTION - SERVER_TRANSMISSION");
 
         fprintf(stdout, "Incoming connection received, spawning worker...\n");
+
+
+        pid_t pid = fork();
+        if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORKE - SERVER TX");
+        
+        else if (pid == 0) {
+            // child: close the listening socket and process the request
+            ret = close(socket_desc);
+            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE LISTENING SOCKET");
+            worker_connection_handler(client_desc, &client_addr);
+            fprintf(stdout, "Process creation to handle request has completed.\n");
+            _exit(EXIT_SUCCESS);
+        } 
+        
+        else {
+            // server: close the incoming socket and continue
+            ret = close(client_desc);
+            if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
+            fprintf(stdout, "Child process successfully created to handle the request...\n");
+            // reset fields in client_addr so it can be reused for the next accept()
+            memset(&client_addr, 0, sizeof(struct sockaddr_in));
+        }
     }
 }
 
