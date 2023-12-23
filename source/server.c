@@ -33,12 +33,14 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
 
 
         pid_t pid = fork();
-        if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORKE - SERVER TX");
+        if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORK - SERVER TX");
         
         else if (pid == 0) {
             // child: close the listening socket and process the request
+            ret = shutdown(socket_desc, SHUT_WR);
+            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT SHUTDOWN MAIN SERVER SOCKET - SERVER TX");
             ret = close(socket_desc);
-            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE LISTENING SOCKET");
+            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
             worker_connection_handler(client_desc, &client_addr);
             fprintf(stdout, "Process creation to handle request has completed.\n");
             _exit(EXIT_SUCCESS);
