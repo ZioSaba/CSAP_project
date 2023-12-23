@@ -16,4 +16,4 @@ client: $(CLIENT_CODE) $(COMMONS)
 
 
 clean:
-	rm -f run_server run_client
+	rm -f run_server run_client ./logs/*

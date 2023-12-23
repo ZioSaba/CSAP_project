@@ -65,8 +65,8 @@ void main(int argc, char* argv[]){
     ret = connect(socket_desc, (struct sockaddr* ) &server_addr, sizeof(struct sockaddr_in));
     if (ret) HANDLE_ERROR("ERROR DURING CONNECTION");
 
-    fprintf(stdout, "Connection established, waiting to be accepted");
+    fprintf(stdout, "Connection established, waiting to be accepted...\n");
 
     initiate_client_transmission(socket_desc);
-    // The program should never reach here
+    // The program should never this line
 }
