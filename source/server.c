@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -12,7 +13,10 @@
 #include <fcntl.h>
 
 #include "commons.h"
+#include "worker.c"
 
+
+void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
 
 void initiate_server_transmission(int socket_desc, int logfile_fd){
@@ -36,21 +40,21 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
         if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORK - SERVER TX");
         
         else if (pid == 0) {
-            // child: close the listening socket and process the request
+            // Child closes the listening socket and processes the request
             ret = shutdown(socket_desc, SHUT_WR);
             if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT SHUTDOWN MAIN SERVER SOCKET - SERVER TX");
             ret = close(socket_desc);
             if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
-            worker_connection_handler(client_desc, &client_addr);
-            fprintf(stdout, "Process creation to handle request has completed.\n");
-            _exit(EXIT_SUCCESS);
+            worker_connection_handler(client_desc, &client_addr, logfile_fd);
+            fprintf(stdout, "Child process %d successfully handled a connection. Terminating...\n", getpid());
+            exit(0);
         } 
         
         else {
-            // server: close the incoming socket and continue
+            // Server closes the incoming socket and continues accepting new requests
             ret = close(client_desc);
             if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
-            fprintf(stdout, "Child process successfully created to handle the request...\n");
+            fprintf(stdout, "Child process %d successfully created to handle the request...\n", pid);
             // reset fields in client_addr so it can be reused for the next accept()
             memset(&client_addr, 0, sizeof(struct sockaddr_in));
         }
@@ -161,7 +165,7 @@ void main(int argc, char* argv[]){
     if (logfile_fd < 0){
         if(errno == EEXIST) {
             fprintf(stderr, "WARNING! FILE %s ALREADY EXISTS, IT WILL BE OVERWRITTEN!\n", path);
-            logfile_fd = open(path, O_WRONLY | O_CREAT, 0644);
+            logfile_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         }else
             HANDLE_ERROR("ERROR! CANNOT CREATE LOGFILE - MAIN");
     }
@@ -172,15 +176,11 @@ void main(int argc, char* argv[]){
 
     // Server prints log start timestamp
     time_t ltime;
-    char date[27];
-    char* timestamp = "The server started logging as of ";
+    char timestamp[100];
     time(&ltime);
-    ctime_r(&ltime, date);
-    printf("Contenuto di date = %s", date);
+    sprintf(timestamp, "The server started logging as of %s", ctime(&ltime));
     ret = write(logfile_fd, timestamp, strlen(timestamp));
-    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT WRITE LOG SESSION START MESSAGE - MAIN");
-    ret = write(logfile_fd, date, strlen(date));
-    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT WRITE LOG SESSION TIMESTAMP - MAIN");
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT PRINT LOG START MESSAGE - MAIN");
     
 
     // Invoke looping function

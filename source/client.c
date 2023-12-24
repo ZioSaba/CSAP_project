@@ -3,16 +3,69 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-
+#include <errno.h>
+#include <netdb.h>
+#include <time.h>
+#include <fcntl.h>
 #include "commons.h"
 
 
 
 void initiate_client_transmission(int socket_desc){
     
+    // Client waits until receives "Hello" from server before sending its messages
+
+    // Buffer that will be used to send and receive data
+    char buf[1024];
+    size_t buf_len = sizeof(buf);
+    int msg_len;
+    memset(buf, 0, buf_len);
+
+    int ret = 0;        // Generic variables to keep track of syscalls' results
+
+    // Variables to keep track of number of bytes sent/recv
+    int recv_bytes = 0;
+    int sent_bytes = 0;
+
+
+
+    // Display welcome message
+    do {
+        ret = recv(socket_desc, buf + recv_bytes, buf_len - recv_bytes, 0);
+        if (ret == -1 && errno == EINTR) continue;
+        else if (ret == -1) HANDLE_ERROR("ERROR! CLIENT CANNOT READ FROM SOCKET - CLIENT TX");
+        else if (ret == 0) break;
+        recv_bytes += ret;
+    } while (buf[recv_bytes-1] != '\n');
+    fprintf(stdout, "%s", buf);
+
+
+    // Main communication loop
+    while (1) {
+
+        fprintf(stdout, "Insert your message: ");
+
+        // Read from stdin the message to log
+        if (fgets(buf, sizeof(buf), stdin) == NULL) HANDLE_ERROR("ERROR! CLIENT FAILED READING FROM STDIN - CLIENT TX");
+        msg_len = strlen(buf);
+        
+        // send message to server
+        sent_bytes=0;
+        while (sent_bytes < msg_len) {
+            ret = send(socket_desc, buf + sent_bytes, msg_len - sent_bytes, 0);
+            if (ret == -1 && errno == EINTR) continue;
+            else if (ret == -1) HANDLE_ERROR("ERROR! CLIENT CANNOT WRITE TO SOCKET - CLIENT TX");
+            sent_bytes += ret;
+        }
+
+        /* After a quit command we won't receive any more data from
+         * the server, thus we must exit the main loop. */
+        if (msg_len == strlen(QUIT_COMMAND) && !memcmp(buf, QUIT_COMMAND, strlen(QUIT_COMMAND))) break;
+    }
 }
 
 
@@ -65,7 +118,7 @@ void main(int argc, char* argv[]){
     ret = connect(socket_desc, (struct sockaddr* ) &server_addr, sizeof(struct sockaddr_in));
     if (ret) HANDLE_ERROR("ERROR DURING CONNECTION");
 
-    fprintf(stdout, "Connection established, waiting to be accepted...\n");
+    fprintf(stdout, "Connection established, waiting to be accepted...\n\n");
 
     initiate_client_transmission(socket_desc);
     // The program should never this line
