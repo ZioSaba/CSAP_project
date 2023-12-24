@@ -1,0 +1,8 @@
+add error handling EVERYWHERE!
+
+add signal handling
+
+check correctness of send, rcv and write operations on file
+
+add rotation (OPTIONAL)
+add automated tests (HOW? Lookup on the internet how they work)
