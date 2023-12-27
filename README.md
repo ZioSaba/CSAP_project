@@ -1,102 +1,92 @@
 # CSAP January Project
 
 
-## Summary
+## Objective
 The task is to create a multi-process log server, where each client is served by a "worker" process spawned by the main server.
-After a connection has been established, the client sends messages to the assigned worker, which in turn writes the message received on a common file that is modified by other clients.
+After a connection has been established, the client starts communicating with the assigned worker, which in turn logs said messages on a file created initially by the main server.
+Assuming the server received an exit command, it will wait for all workers to terminate before initiating the exit procedure.<br><br>
 
 
-## Prerequisiti
-* Versione modificata di SymCC, disponibile al seguente indirizzo: "https://github.com/ZioSaba/symcc"
-* Versione modificata di SymQEMU, disponibile al seguente indirizzo: "https://github.com/ZioSaba/symqemu"
 
-Il simbolo "**" scrive in grassetto
-**Sono in grassetto**
+## Specification
 
-Il simbolo "##" crea un titolo piccolo con divisorio
-## Sono un titolo piccolo
+### Server
+The server uses the following default configuration, specified in "commons.h":
+* IP Address 127.0.0.1
+* Port number 10000
+* Logs stored in ./logs
 
-Il simbolo "*" crea un elemento di una lista
-* Elem_1
-* Elem_2
+The "Port number" and "Logs Location" parameters can be customized by specifying them on the command line.<br><br>
 
-Il simbolo "_" scrive in corsivo
-_Sono in corsivo_
+### Client
+The client uses the following default configuration, specified in "commons.h":
+* IP Address 127.0.0.1
+* Port number 10000
 
-## Funzionamento
+The "IP Address" and "Port Number" parameters can be customized by specifying them on the command line.<br><br>
 
-Il simbolo "```sh" consente di scrivere testo di shell
+
+
+
+## Compiling the program
+I provided a Makefile with the following targets:
+
 ```sh
-$make 
+$ make all       #compiles all files and create both client and server executables
+
+$ make server    #compiles only server.c and its executable
+
+$ make client    #compiles only client.c and its executable
+
+$ make clean     #removes the logs in ./logs and all executables
 ```
-
-Il simbolo "###" crea un titolo piccolo senza divisorio
-### Sono un titolo piccolissimo
+<br>
 
 
 
-# Signals in disastrOS - SO Project
+## Running the program
+First, you should launch the server:
 
-## Summary
-The goal of this project is to implement a simple signals system within disastrOS, a program provided by our professors. <br/>
-Given the PCB of a generic process, a system call defined by us will be invoked at a specific time and will set a signal number for the aforementioned process.
-
-
-## How?
-An array of contexts has been added to the process PCB, in which each cell will contain the context associated with the same number as the received signal, along with a common stack that all the signal contexts will share. <br/>
-We used two bitmaps to handle the signals, one for the received signals and one for the signal being served.
-<br/>
-We have defined a new syscall, called _internal_signal_, which will run at fixed intervals (defined in signal.h) and the function works as follows:
-1. it analyzes which signal must be sent in that instant of time
-2. we scan the ready_list to check if it's not empty
-    * if not empty
-        - we find the PCB of the last process in the ready_list
-        - we check if that process is _init_, in which case the function will return
-        - we check if the last signal received is the same as the one we are trying to send or the same signal is served, in which case the function will print a message
-        - otherwise, we create a new context which will be used by the signal_handler
-        - if the signals_mask is not set, we set the bit representing that signal we just sent
-    * otherwise, we go to 3
-3. we scan the waiting_list to check if it's not empty
-    * if not empty
-        - we find the PCB of the last process in the waiting_list
-        - we check if that process is _init_, in which case the function will return
-        - we check if the last signal received is the same as the one we are trying to send or the same signal
-is served, in which case the function will print a message
-        - otherwise, we create a new context which will be used by the signal_handler
-        - if the signals_mask is not set, we set the bit representing that signal we just sent 
-4. if 2 and 3 fail, the program will crash because **at least one process must be active**
-
-
-Before each process starts running, we check if any of the signals are active by checking the _signals_ value in the PCB: if the value is not zero, we jump to the _signal main context_, otherwise the process proceeds in its execution. <br/>
-Assuming that we are in the _signal main context_, we begin to scan the mask of the signals received until we find a cell with its bit set, then we move on to the context inside the cell of the array of contexts with the same index if the mask of the signal served is not set. 
-
-
-## Signals defined
-We have defined two signals:
-1. _MovUp_: print an informative message and set a variable on the PCB to "true", which will be used the next time the process performs a wait
-2. _Kill_: print an informative message meaning the process would be killed
-
-## How to execute
-Type in shell the following:
 ```sh
-$ make
-$ ./disastrOS_test
+$ ./run_server           # server uses default configuration
+
+$ ./run_server 12345     # server uses default logs location and custom port number
+
+$ ./run_server /home/USERNAME/Documents/    # server uses default port number and custom logs location
+                                            # pathname must terminate with /, otherwise it may be a file :D
+                                            
+$ ./run_server 12345 /home/USERNAME/Documents/      # server uses full custom configuration
 ```
+<br>
+
+Then, you can start spawning clients:
+
+```sh
+$ ./run_client                      # client uses default configuration
+                                            
+$ ./run_client x.x.x.x PORT_N       # client uses custom configuration
+```
+<br>
 
 
-### Source files that have been changed:
-- disastrOS_constants.h
-- disastrOS_pcb.c
-- disastrOS_pcb.h
-- disastrOS_sleep.c
-- disastrOS_spawn.c
-- disastrOS_syscalls.h
-- disastrOS.c
-- disastrOS.h
 
-### Added files:
-- disastrOS_sendSignal.c
-- sigKill.c
-- sigMovUp.c
-- signalMakeContext.c
-- signals.h
+## Expected behavior
+Upon starting, the server checks the number of arguments provided on the command line and sets some configuration variables that will be used to apply the requested parameters.
+Then, it creates, binds and starts listening on a socket.
+<br>
+Assuming the above operations were successfull, the server creates a new logfile named "csap_logserver" (defined in "commons.h") in the specified pathname, opens it using write permissions and logs a debug message specifying the timestamp when the log session started.
+<br> <br>
+After this initial configuration, the server starts monitoring both the standard input and the socket for incoming connections.
+<br> <br>
+Assuming the user types something on the standard input, the server will not accept any commands except for the SIGINT signal (Ctrl+C) or the 'QUIT' command, in which case both of them will start the exit procedure.
+<br> <br>
+Assuming a new connection is received, the server accepts the connection and spawns a new worker that will handle the communication using a fork(), increases the number of active connections and resets the "sockaddr" structure so that it can be reused for a new connection.
+<br> <br>
+Once spawned, the worker closes the main server's socket and sends a "Hello" message to the client, specifying the connection's parameters and the command to close the connection. Then, it also writes on the log file a debug message specifying the timestamp when the connection started.
+<br>
+Now the worker enters the main loop, where it will receive the messages sent by the client, check if the "quit connection" command has been received, and store the messages received on the log file along with the ID of the client that sent them.
+Assuming the "quit connection" command has been received, the worker will close the socket and write on the log file a debug message specifying when the connection ended.
+<br> <br>
+When the server receives either a SIGINT or a 'QUIT' command from the user, it will initiate the exit procedure only after all workers created terminated, which is done by collecting the SIGCHLD signal and decrementing the number of active connections.
+When the number of connections reaches 0, the server closes its socket and terminates.
+

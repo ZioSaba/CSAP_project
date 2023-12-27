@@ -19,16 +19,16 @@
 #include "worker.c"
 
 
-bool exit_signal_received = false;      // used to initiate exit procedure
+bool exit_signal_received = false;          // used to initiate exit procedure
 int num_childs = 0;                         // keeps track of childs generated before exiting
 
 
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
-
+/*
 void signal_handler(){
     fprintf(stdout, "Received exit signal");
-}
+}*/
 
 
 void initiate_server_transmission(int socket_desc, int logfile_fd){
@@ -39,14 +39,15 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
     int sockaddr_len = sizeof(struct sockaddr_in);  // Needed for the accept
 
 
+    /*
     // Signal handling structure
     struct sigaction act = {0} ;
     act.sa_handler = signal_handler;
     ret = sigaction(SIGINT, &act, 0);
-    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");   */
 
 
-    fprintf(stdout, "Use Ctrl+C or type 'QUIT' to close the process...\n");
+    fprintf(stdout, "Use 'QUIT' to close the process...\n");
 
 
     // Variables for polling using select()
@@ -67,11 +68,18 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
         if (FD_ISSET(STDIN_FILENO, &read_set)){
             char buf[1024];
             fgets(buf, sizeof(buf), stdin);
-            printf("Contenuto di buf = %s\n", buf);
+            if (strlen(buf) == strlen(QUIT_COMMAND) && !memcmp(buf, QUIT_COMMAND, strlen(QUIT_COMMAND))){
+                exit_signal_received = true;
+                fprintf(stdout, "Received 'QUIT' command, initiating exit procedure...\n");
+                exit(1);
+            }
+            else {
+                fprintf(stdout, "Command not recognized, ignoring...\n");
+            }
         }
 
         else if (FD_ISSET(socket_desc, &read_set)){
-            // handle input from socket
+            // Server handles input from socket
             int client_desc = accept(socket_desc, (struct sockaddr* ) &client_addr, (socklen_t* ) &sockaddr_len);
             if (client_desc == -1 && errno == EINTR) continue;  // If interrupted by a signal, continue execution
             else if (client_desc < 0) HANDLE_ERROR("ERROR! CANNOT OPEN SOCKET FOR INCOMING CONNECTION - SERVER_TRANSMISSION");
@@ -102,6 +110,9 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 memset(&client_addr, 0, sizeof(struct sockaddr_in));
             }
         }
+
+        //Reset fd
+        FD_ZERO(&read_set);
     }
 }
 
