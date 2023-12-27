@@ -13,21 +13,21 @@
 #include <time.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <fcntl.h>
 
 #include "commons.h"
 #include "worker.c"
 
 
+bool exit_signal_received = false;      // used to initiate exit procedure
+int num_childs = 0;                         // keeps track of childs generated before exiting
+
+
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
 
-void SIGINT_handler(){
-    printf("segnale sigint ignoratno\n");
-}
-
-void SIGQUIT_handler(){
-    printf("segnale sigquit ricevuto\n");
-    exit(1);
+void signal_handler(){
+    fprintf(stdout, "Received exit signal");
 }
 
 
@@ -38,19 +38,20 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
     struct sockaddr_in client_addr = {0};           // Struct for client socket parameters + initialize all fields to zero
     int sockaddr_len = sizeof(struct sockaddr_in);  // Needed for the accept
 
-    int active_connections = 0;                     // used to keep track of how many childrens are active
-
 
     // Signal handling structure
-    struct sigaction SIGINT_act = {0} ;
-    SIGINT_act.sa_handler = SIGINT_handler;
-    ret = sigaction(SIGINT, &SIGINT_act, 0);
-    if (ret == -1) HANDLE_ERROR("ERROR! CANNOT HANDLE SIGTERM SIGNAL - SERVER TX");
+    struct sigaction act = {0} ;
+    act.sa_handler = signal_handler;
+    ret = sigaction(SIGINT, &act, 0);
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");
+
+
+    fprintf(stdout, "Use Ctrl+C or type 'QUIT' to close the process...\n");
 
 
     // Variables for polling using select()
     fd_set read_set;
-    FD_ZERO(&read_set);
+    FD_ZERO(&read_set);    
 
 
     // Main loop to manage incoming connections
@@ -59,12 +60,14 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
         FD_SET(STDIN_FILENO, &read_set);
         FD_SET(socket_desc, &read_set);
 
-        ret = select(FD_SETSIZE, &read_set, NULL, NULL, 0);
+        ret = select(FD_SETSIZE, &read_set, NULL, NULL, NULL);
         if (ret <= 0 && errno == EINTR) continue;
         else if (ret <= 0) HANDLE_ERROR("ERROR! SELECT NOT WORKING - SERVER TX");
 
         if (FD_ISSET(STDIN_FILENO, &read_set)){
-            //handle input from STDIN
+            char buf[1024];
+            fgets(buf, sizeof(buf), stdin);
+            printf("Contenuto di buf = %s\n", buf);
         }
 
         else if (FD_ISSET(socket_desc, &read_set)){
@@ -95,11 +98,10 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 ret = close(client_desc);
                 if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
                 fprintf(stdout, "Child process %d successfully created to handle the request...\n", pid);
-                // reset fields in client_addr so it can be reused for the next accept()
+                // Reset fields in client_addr so it can be reused for the next accept()
                 memset(&client_addr, 0, sizeof(struct sockaddr_in));
             }
         }
-        FD_ZERO(&read_set);
     }
 }
 
@@ -212,7 +214,7 @@ void main(int argc, char* argv[]){
             HANDLE_ERROR("ERROR! CANNOT CREATE LOGFILE - MAIN");
     }
     
-    fprintf(stdout, "Opened log file in %s\n", path);
+    fprintf(stdout, "Created log file in %s\n", path);
     free(path);
 
 
