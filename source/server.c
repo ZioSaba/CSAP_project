@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -11,12 +12,23 @@
 #include <netdb.h>
 #include <time.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #include "commons.h"
 #include "worker.c"
 
 
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
+
+
+void SIGINT_handler(){
+    printf("segnale sigint ignoratno\n");
+}
+
+void SIGQUIT_handler(){
+    printf("segnale sigquit ricevuto\n");
+    exit(1);
+}
 
 
 void initiate_server_transmission(int socket_desc, int logfile_fd){
@@ -26,38 +38,68 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
     struct sockaddr_in client_addr = {0};           // Struct for client socket parameters + initialize all fields to zero
     int sockaddr_len = sizeof(struct sockaddr_in);  // Needed for the accept
 
+    int active_connections = 0;                     // used to keep track of how many childrens are active
+
+
+    // Signal handling structure
+    struct sigaction SIGINT_act = {0} ;
+    SIGINT_act.sa_handler = SIGINT_handler;
+    ret = sigaction(SIGINT, &SIGINT_act, 0);
+    if (ret == -1) HANDLE_ERROR("ERROR! CANNOT HANDLE SIGTERM SIGNAL - SERVER TX");
+
+
+    // Variables for polling using select()
+    fd_set read_set;
+    FD_ZERO(&read_set);
+
+
     // Main loop to manage incoming connections
     while(1){
-        
-        int client_desc = accept(socket_desc, (struct sockaddr* ) &client_addr, (socklen_t* ) &sockaddr_len);
-        if (client_desc == -1 && errno == EINTR) continue;  // If interrupted by a signal, continue execution
-        else if (client_desc < 0) HANDLE_ERROR("ERROR! CANNOT OPEN SOCKET FOR INCOMING CONNECTION - SERVER_TRANSMISSION");
 
-        fprintf(stdout, "Incoming connection received, spawning worker...\n");
+        FD_SET(STDIN_FILENO, &read_set);
+        FD_SET(socket_desc, &read_set);
 
+        ret = select(FD_SETSIZE, &read_set, NULL, NULL, 0);
+        if (ret <= 0 && errno == EINTR) continue;
+        else if (ret <= 0) HANDLE_ERROR("ERROR! SELECT NOT WORKING - SERVER TX");
 
-        pid_t pid = fork();
-        if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORK - SERVER TX");
-        
-        else if (pid == 0) {
-            // Child closes the listening socket and processes the request
-            ret = shutdown(socket_desc, SHUT_WR);
-            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT SHUTDOWN MAIN SERVER SOCKET - SERVER TX");
-            ret = close(socket_desc);
-            if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
-            worker_connection_handler(client_desc, &client_addr, logfile_fd);
-            fprintf(stdout, "Child process %d successfully handled a connection. Terminating...\n", getpid());
-            exit(0);
-        } 
-        
-        else {
-            // Server closes the incoming socket and continues accepting new requests
-            ret = close(client_desc);
-            if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
-            fprintf(stdout, "Child process %d successfully created to handle the request...\n", pid);
-            // reset fields in client_addr so it can be reused for the next accept()
-            memset(&client_addr, 0, sizeof(struct sockaddr_in));
+        if (FD_ISSET(STDIN_FILENO, &read_set)){
+            //handle input from STDIN
         }
+
+        else if (FD_ISSET(socket_desc, &read_set)){
+            // handle input from socket
+            int client_desc = accept(socket_desc, (struct sockaddr* ) &client_addr, (socklen_t* ) &sockaddr_len);
+            if (client_desc == -1 && errno == EINTR) continue;  // If interrupted by a signal, continue execution
+            else if (client_desc < 0) HANDLE_ERROR("ERROR! CANNOT OPEN SOCKET FOR INCOMING CONNECTION - SERVER_TRANSMISSION");
+
+            fprintf(stdout, "Incoming connection received, spawning worker...\n");
+
+
+            pid_t pid = fork();
+            if (pid < 0) HANDLE_ERROR("ERROR! SERVER CANNOT FORK - SERVER TX");
+
+            else if (pid == 0) {
+                // Child closes the listening socket and processes the request
+                ret = shutdown(socket_desc, SHUT_WR);
+                if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT SHUTDOWN MAIN SERVER SOCKET - SERVER TX");
+                ret = close(socket_desc);
+                if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
+                worker_connection_handler(client_desc, &client_addr, logfile_fd);
+                fprintf(stdout, "Child process %d successfully handled a connection. Terminating...\n", getpid());
+                exit(0);
+            } 
+
+            else {
+                // Server closes the incoming socket and continues accepting new requests
+                ret = close(client_desc);
+                if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
+                fprintf(stdout, "Child process %d successfully created to handle the request...\n", pid);
+                // reset fields in client_addr so it can be reused for the next accept()
+                memset(&client_addr, 0, sizeof(struct sockaddr_in));
+            }
+        }
+        FD_ZERO(&read_set);
     }
 }
 
