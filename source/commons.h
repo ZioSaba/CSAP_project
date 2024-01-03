@@ -20,4 +20,10 @@ void initiate_server_transmission(int socket_desc, int logfile_fd);
 void initiate_client_transmission(int socket_desc);
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
+
+/* Other utilities */
+#ifndef max
+#define max(a,b)            (((a) > (b)) ? (a) : (b))
+#endif
+
 #endif  //COMMON_H

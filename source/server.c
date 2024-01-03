@@ -25,10 +25,14 @@ int num_childs = 0;                         // keeps track of childs generated b
 
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
-/*
+
 void signal_handler(){
     fprintf(stdout, "Received exit signal");
-}*/
+}
+
+void signal_handler2(){
+    fprintf(stdout, "Received child signal");
+}
 
 
 void initiate_server_transmission(int socket_desc, int logfile_fd){
@@ -39,12 +43,19 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
     int sockaddr_len = sizeof(struct sockaddr_in);  // Needed for the accept
 
 
-    /*
+    
     // Signal handling structure
     struct sigaction act = {0} ;
     act.sa_handler = signal_handler;
     ret = sigaction(SIGINT, &act, 0);
-    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");   */
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");
+
+    
+    struct sigaction act2 = {0} ;
+    act2.sa_handler = signal_handler2;
+    ret = sigaction(SIGCHLD, &act2, 0);
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGCHDL SIGNAL - SERVER TX");     
+    
 
 
     fprintf(stdout, "Use 'QUIT' to close the process...\n");
@@ -52,18 +63,30 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
 
     // Variables for polling using select()
     fd_set read_set;
-    FD_ZERO(&read_set);    
+    FD_ZERO(&read_set);
+    struct timeval timeout;
+
+    sigset_t sigset, oldset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGTERM);
+    sigaddset(&sigset, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &sigset, &oldset);
 
 
     // Main loop to manage incoming connections
     while(1){
 
+        //Reset fd
+        FD_ZERO(&read_set);
         FD_SET(STDIN_FILENO, &read_set);
         FD_SET(socket_desc, &read_set);
 
-        ret = select(FD_SETSIZE, &read_set, NULL, NULL, NULL);
-        if (ret <= 0 && errno == EINTR) continue;
-        else if (ret <= 0) HANDLE_ERROR("ERROR! SELECT NOT WORKING - SERVER TX");
+        ret = pselect(FD_SETSIZE, &read_set, NULL, NULL, NULL, &oldset);
+        if (ret < 0 && errno == EINTR) {
+            fprintf(stdout, "Select interrupted by signal\n");
+            continue;
+        }
+        else if (ret < 0) HANDLE_ERROR("ERROR! SELECT NOT WORKING - SERVER TX");
 
         if (FD_ISSET(STDIN_FILENO, &read_set)){
             char buf[1024];
@@ -97,7 +120,7 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 ret = close(socket_desc);
                 if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
                 worker_connection_handler(client_desc, &client_addr, logfile_fd);
-                fprintf(stdout, "Child process %d successfully handled a connection. Terminating...\n", getpid());
+                fprintf(stdout, "CHILD %d: Successfully handled a connection, terminating...\n", getpid());
                 exit(0);
             } 
 
@@ -105,14 +128,11 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 // Server closes the incoming socket and continues accepting new requests
                 ret = close(client_desc);
                 if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
-                fprintf(stdout, "Child process %d successfully created to handle the request...\n", pid);
+                fprintf(stdout, "SERVER: Child process %d successfully created to handle the request...\n", pid);
                 // Reset fields in client_addr so it can be reused for the next accept()
                 memset(&client_addr, 0, sizeof(struct sockaddr_in));
             }
         }
-
-        //Reset fd
-        FD_ZERO(&read_set);
     }
 }
 
@@ -216,11 +236,11 @@ void main(int argc, char* argv[]){
     }
 
     // Opening fd
-    logfile_fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    logfile_fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, 0644);
     if (logfile_fd < 0){
         if(errno == EEXIST) {
             fprintf(stderr, "WARNING! FILE %s ALREADY EXISTS, IT WILL BE OVERWRITTEN!\n", path);
-            logfile_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            logfile_fd = open(path, O_WRONLY | O_TRUNC | O_APPEND, 0644);
         }else
             HANDLE_ERROR("ERROR! CANNOT CREATE LOGFILE - MAIN");
     }
