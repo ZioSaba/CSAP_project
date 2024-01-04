@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -26,13 +27,65 @@ int num_childs = 0;                         // keeps track of childs generated b
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd);
 
 
-void signal_handler(){
-    fprintf(stdout, "Received exit signal");
+void SIGINT_handler(){
+    //fprintf(stdout, "Received exit signal, waiting for %d childs\n", num_childs);
+    exit_signal_received = true;
 }
 
-void signal_handler2(){
-    fprintf(stdout, "Received child signal");
+void SIGCHLD_handler(){
+    if(wait(NULL) == -1) HANDLE_ERROR("ERROR! WAIT SIGCHLD HANDLER");
+    num_childs--;
 }
+
+
+void exit_procedure(int socket_desc, int logfile_fd){
+    
+    int ret;
+    
+    // Signal handling structure
+    struct sigaction SIGINT_act = {0} ;
+    SIGINT_act.sa_handler = SIG_DFL;
+    ret = sigaction(SIGINT, &SIGINT_act, 0);
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER EXIT");
+
+    struct sigaction SIGCHLD_act = {0} ;
+    SIGCHLD_act.sa_handler = SIG_DFL;
+    ret = sigaction(SIGCHLD, &SIGCHLD_act, 0);
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGCHDL SIGNAL - SERVER EXIT"); 
+
+
+    while (num_childs > 0) {
+        fprintf(stdout, "Waiting for %d childs \n", num_childs);
+        ret = wait(NULL);
+        if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT PERFORM WAIT - SERVER EXIT");
+        num_childs--;
+    }
+    
+
+    // Server prints log start timestamp
+    time_t ltime;
+    char timestamp[100];
+    time(&ltime);
+    sprintf(timestamp, "The server stopped logging as of %s", ctime(&ltime));
+    ret = write(logfile_fd, timestamp, strlen(timestamp));
+    if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT PRINT LOG END MESSAGE - SERVER EXIT");
+
+
+    // Close socket
+    ret = shutdown(socket_desc, SHUT_WR);
+    if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT SHUTDOWN SOCKET - SERVER EXIT");
+    ret = close(socket_desc);
+    if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE SOCKET - SERVER EXIT");
+
+
+    // Close file desc
+    ret = close(logfile_fd);
+    if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE FILE -- SERVER EXIT");
+
+    exit(0);
+
+}
+
 
 
 void initiate_server_transmission(int socket_desc, int logfile_fd){
@@ -45,15 +98,15 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
 
     
     // Signal handling structure
-    struct sigaction act = {0} ;
-    act.sa_handler = signal_handler;
-    ret = sigaction(SIGINT, &act, 0);
+    struct sigaction SIGINT_act = {0} ;
+    SIGINT_act.sa_handler = SIGINT_handler;
+    ret = sigaction(SIGINT, &SIGINT_act, 0);
     if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");
 
     
-    struct sigaction act2 = {0} ;
-    act2.sa_handler = signal_handler2;
-    ret = sigaction(SIGCHLD, &act2, 0);
+    struct sigaction SIGCHLD_act = {0} ;
+    SIGCHLD_act.sa_handler = SIGCHLD_handler;
+    ret = sigaction(SIGCHLD, &SIGCHLD_act, 0);
     if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGCHDL SIGNAL - SERVER TX");     
     
 
@@ -81,10 +134,26 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
         FD_SET(STDIN_FILENO, &read_set);
         FD_SET(socket_desc, &read_set);
 
+        /*
+        l'idea principale è questa: 
+            creo una nuova maschera per i segnali, inizialmente sono tutti a 0
+
+            aggiungo i segnali SIGTERM e SIGCHLD
+            
+            salvo la maschera attuale in oldset e dico che SIGTERM E SIGCHLD sono bloccati, ovvero non
+            possono essere ricevuti
+            
+            quando arrivo nella pselect, la faccio puntare alla vecchia maschera dove (di default) tutti i 
+            segnali sono consentiti, quindi tecnicamente il segnale SIGTERM o SIGCHLD possono arrivare 
+            solamente durante il blocco imposto dalla select
+            
+            Poi devo reimpostare la vecchia maschera per sicurezza
+        */
+
         ret = pselect(FD_SETSIZE, &read_set, NULL, NULL, NULL, &oldset);
         if (ret < 0 && errno == EINTR) {
-            fprintf(stdout, "Select interrupted by signal\n");
-            continue;
+            if (exit_signal_received) exit_procedure(socket_desc, logfile_fd);
+            else continue;
         }
         else if (ret < 0) HANDLE_ERROR("ERROR! SELECT NOT WORKING - SERVER TX");
 
@@ -94,7 +163,7 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
             if (strlen(buf) == strlen(QUIT_COMMAND) && !memcmp(buf, QUIT_COMMAND, strlen(QUIT_COMMAND))){
                 exit_signal_received = true;
                 fprintf(stdout, "Received 'QUIT' command, initiating exit procedure...\n");
-                exit(1);
+                exit_procedure(socket_desc, logfile_fd);
             }
             else {
                 fprintf(stdout, "Command not recognized, ignoring...\n");
@@ -119,6 +188,13 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT SHUTDOWN MAIN SERVER SOCKET - SERVER TX");
                 ret = close(socket_desc);
                 if (ret) HANDLE_ERROR("ERROR! CHILD CANNOT CLOSE MAIN SERVER SOCKET SOCKET - SERVER TX");
+                
+                // Needed to avoid having the child also receive the SIGTERM sent to the terminal: same group!
+                struct sigaction SIGINT_act = {0};
+                SIGINT_act.sa_handler = SIG_IGN;
+                ret = sigaction(SIGINT, &SIGINT_act, 0);
+                if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT HANDLE SIGINT SIGNAL - SERVER TX");
+
                 worker_connection_handler(client_desc, &client_addr, logfile_fd);
                 fprintf(stdout, "CHILD %d: Successfully handled a connection, terminating...\n", getpid());
                 exit(0);
@@ -129,6 +205,7 @@ void initiate_server_transmission(int socket_desc, int logfile_fd){
                 ret = close(client_desc);
                 if (ret) HANDLE_ERROR("ERROR! SERVER CANNOT CLOSE CLIENT SOCKET - SERVER TX");
                 fprintf(stdout, "SERVER: Child process %d successfully created to handle the request...\n", pid);
+                num_childs++;
                 // Reset fields in client_addr so it can be reused for the next accept()
                 memset(&client_addr, 0, sizeof(struct sockaddr_in));
             }

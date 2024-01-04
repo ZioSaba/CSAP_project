@@ -94,9 +94,20 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
         memset(network_buf, 0, net_buf_len);
     }
 
+
     // Log connection closed
     time(&ltime);
-    sprintf(file_buf, "\n\nThe worker %d closed connection with client %d at %s", getpid(), client_ID, ctime(&ltime));
+    sprintf(file_buf, "\n\nThe worker %d closed connection with client %d at %s\n\n", getpid(), client_ID, ctime(&ltime));
     ret = write(logfile_fd, file_buf, strlen(file_buf));
     memset(file_buf, 0, file_buf_len);
+
+
+    // Closing file descriptors
+    ret = close(client_desc);
+    if (ret) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE SOCKET");
+
+
+    // Close file desc
+    ret = close(logfile_fd);
+    if (ret) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE FILE");
 }
