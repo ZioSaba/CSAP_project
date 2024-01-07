@@ -89,4 +89,3 @@ Assuming the "quit connection" command has been received, the worker will close 
 <br> <br>
 When the server receives either a SIGINT or a 'QUIT' command from the user, it will initiate the exit procedure only after all workers created terminated, which is done by collecting the SIGCHLD signal and decrementing the number of active connections.
 When the number of connections reaches 0, the server closes its socket and terminates.
-

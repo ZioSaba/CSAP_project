@@ -25,11 +25,12 @@ void initiate_client_transmission(int socket_desc){
     int msg_len;
     memset(buf, 0, buf_len);
 
-    int ret = 0;        // Generic variables to keep track of syscalls' results
+    int ret = 0;        // Generic variable to keep track of syscalls' results
 
     // Variables to keep track of number of bytes sent/recv
     int recv_bytes = 0;
     int sent_bytes = 0;
+
 
 
 
@@ -44,16 +45,18 @@ void initiate_client_transmission(int socket_desc){
     fprintf(stdout, "%s", buf);
 
 
+
+
     // Main communication loop
     while (1) {
 
         fprintf(stdout, "Insert your message: ");
 
-        // Read from stdin the message to log
+        // Read message from stdin
         if (fgets(buf, sizeof(buf), stdin) == NULL) HANDLE_ERROR("ERROR! CLIENT FAILED READING FROM STDIN - CLIENT TX");
         msg_len = strlen(buf);
         
-        // send message to server
+        // Send message to server
         sent_bytes=0;
         while (sent_bytes < msg_len) {
             ret = send(socket_desc, buf + sent_bytes, msg_len - sent_bytes, 0);
@@ -62,11 +65,22 @@ void initiate_client_transmission(int socket_desc){
             sent_bytes += ret;
         }
 
-        /* After a quit command we won't receive any more data from
-         * the server, thus we must exit the main loop. */
+        // Check if 'QUIT\n' command has been sent, in this case initate exit procedure
         if (msg_len == strlen(QUIT_COMMAND) && !memcmp(buf, QUIT_COMMAND, strlen(QUIT_COMMAND))) break;
     }
+
+
+
+
+    // Exit procedure
+    ret = shutdown(socket_desc, SHUT_RDWR);
+    if (ret == -1) HANDLE_ERROR("ERROR! CLIENT CANNOT SHUTDOWN SOCKET - CLIENT TX");
+    ret = close(socket_desc);
+    if (ret == -1) HANDLE_ERROR("ERROR! CLIENT CANNOT CLOSE SOCKET - CLIENT TX");
+
+    exit(0);
 }
+
 
 
 
@@ -80,6 +94,9 @@ void main(int argc, char* argv[]){
     int ret;                                // Used to check result of CONNECT operation
     
 
+
+
+    // Checking command line parameters
     if (argc == 1){
         fprintf(stdout, "Client will run using default configuration...\n");
         isDefault = true;
@@ -98,7 +115,7 @@ void main(int argc, char* argv[]){
     }
 
 
-    // Create socket
+    // Creating the socket that will be used to connect
     socket_desc = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_desc < 0) HANDLE_ERROR("ERROR DURING SOCKET CREATION");
 
@@ -114,12 +131,16 @@ void main(int argc, char* argv[]){
         server_addr.sin_port = htons(atoi(argv[2]));
     }
 
+
     // Establish a connection
     ret = connect(socket_desc, (struct sockaddr* ) &server_addr, sizeof(struct sockaddr_in));
-    if (ret) HANDLE_ERROR("ERROR DURING CONNECTION");
+    if (ret == -1) HANDLE_ERROR("ERROR DURING CONNECTION");
+
 
     fprintf(stdout, "Connection established, waiting to be accepted...\n\n");
 
+    // Inoke looping function
     initiate_client_transmission(socket_desc);
+
     // The program should never this line
 }

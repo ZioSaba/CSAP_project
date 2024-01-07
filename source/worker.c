@@ -19,7 +19,7 @@
 
 void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr, int logfile_fd){
 
-    // Variables that will be used to receive data
+    // Variables that will be used for network communication
     char network_buf[1024];
     size_t net_buf_len = sizeof(network_buf);
     int msg_len;
@@ -27,16 +27,18 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
     int bytes_recv = 0;
     int bytes_sent = 0;
 
-    int ret = 0;                                    // Generic variables to keep track of syscalls' results
-    int client_ID = ntohs(client_addr->sin_port);   // Use port as unique ID, for simplicity
 
-    // Variables to keep track of number of bytes sent/recv
+    int ret = 0;                                    // Generic variable to keep track of syscalls' results
+    int client_ID = ntohs(client_addr->sin_port);   // Use client's port as unique ID, for simplicity
+
+
+    // Variables that will be used for logging
     char file_buf[1024];
     size_t file_buf_len = sizeof(file_buf);
     memset(file_buf, 0, file_buf_len);
     int bytes_written = 0;
 
-    time_t ltime;                                   // Variable used for timestamp
+
 
 
     // Worker sends "Hello" message
@@ -51,11 +53,24 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
     memset(network_buf, 0, net_buf_len);
 
 
+
+
     // Write connection handling log message on file
+    time_t ltime;
     time(&ltime);
     sprintf(file_buf, "\n\nThe worker %d is now handling client %d connected at %s\n\n", getpid(), client_ID, ctime(&ltime));
-    ret = write(logfile_fd, file_buf, strlen(file_buf));
+    
+    bytes_written = 0;
+    while (bytes_written < strlen(file_buf)) {
+            ret = write(logfile_fd, file_buf + bytes_written, strlen(file_buf) - bytes_written);
+            if (ret == -1 && errno == EINTR) continue;
+            else if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT PRINT LOG START MESSAGE - MAIN");
+            bytes_written += ret;
+    }  
+
     memset(file_buf, 0, file_buf_len);
+
+
 
 
     // Main recv loop and log
@@ -64,16 +79,17 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
         // Read message received from client
         bytes_recv = 0;
         do {
-            ret = recv(client_desc, network_buf + bytes_recv, 1, 0);
+            ret = recv(client_desc, network_buf + bytes_recv, net_buf_len - bytes_recv, 0);
             if (ret == -1 && errno == EINTR) continue;
             else if (ret == -1) HANDLE_ERROR("ERROR! WORKER CANNOT READ FROM SOCKET");
-            else if (ret == 0) break;               // Check if client closed socket unexpectedly
-		} while (network_buf[bytes_recv++] != '\n');
+            else if (ret == 0) break;                   // Check if client closed socket unexpectedly
+            bytes_recv += ret;
+		} while (network_buf[bytes_recv-1] != '\n');
 
         // Check if client closed socket unexpectedly
         if (bytes_recv == 0) break;
 
-        // Check if client sent 'QUIT' command
+        // Check if client sent 'QUIT\n' command
         if (bytes_recv == strlen(QUIT_COMMAND) && !memcmp(network_buf, QUIT_COMMAND, strlen(QUIT_COMMAND))) break;
 
         
@@ -98,16 +114,27 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
     // Log connection closed
     time(&ltime);
     sprintf(file_buf, "\n\nThe worker %d closed connection with client %d at %s\n\n", getpid(), client_ID, ctime(&ltime));
-    ret = write(logfile_fd, file_buf, strlen(file_buf));
+    
+    bytes_written = 0;
+    while (bytes_written < strlen(file_buf)) {
+            ret = write(logfile_fd, file_buf + bytes_written, strlen(file_buf) - bytes_written);
+            if (ret == -1 && errno == EINTR) continue;
+            else if (ret == -1) HANDLE_ERROR("ERROR! SERVER CANNOT PRINT LOG START MESSAGE - MAIN");
+            bytes_written += ret;
+    }  
+
     memset(file_buf, 0, file_buf_len);
 
 
+
+
+    // Exit procedure
+
     // Closing file descriptors
     ret = close(client_desc);
-    if (ret) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE SOCKET");
-
+    if (ret == -1) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE SOCKET");
 
     // Close file desc
     ret = close(logfile_fd);
-    if (ret) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE FILE");
+    if (ret == -1) HANDLE_ERROR("ERROR! WORKER CANNOT CLOSE FILE");
 }
