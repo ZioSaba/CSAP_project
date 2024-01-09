@@ -1,1 +1,5 @@
-add rotation of logs
+add size checking mechanisms in server during transmission (possibly passing path to initate_transmission)
+
+keep constant track of file size
+
+implement rotation 
