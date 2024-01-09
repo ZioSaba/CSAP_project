@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "commons.h"
 #include "worker.c"
@@ -45,6 +47,92 @@ void SIGCHLD_handler(){
         else if (pid == -1 && errno != ECHILD) HANDLE_ERROR("ERROR! SIGCHLD WAITPID");
         else num_childs--;
     }
+}
+
+
+
+
+int directory_lookup(char* buf, char* pathname, int total_length){
+
+    int fd;                     // Return value
+    int version = 0;            // Used for versioning
+    bool log_exists = false;    // Check for existance
+
+    // Variables used to keep track of most recent file based on "Last modified time"
+    time_t most_recent_time = 0;
+    char* temp_filename = calloc(256, sizeof(char));
+
+
+    // Open directory and scan through files
+    DIR* directory = opendir(buf);
+    if (directory == NULL) HANDLE_ERROR("ERROR! CANNOT OPEN DIR - DIR LOOKUP");
+    
+    struct dirent* dir_p = readdir(directory);
+    errno = 0;
+    if (dir_p == NULL && errno != 0) HANDLE_ERROR("ERROR! CANNOT READ FIRST ELEMENT OF DIR - DIR LOOKUP");
+    
+
+    // Look for most recent file in the directory
+    while (dir_p != NULL){
+		
+        if (dir_p->d_type != DT_DIR){
+				
+			if (strstr(dir_p->d_name, LOG_NAME) != NULL) {
+                
+                log_exists = true;
+
+                memset(buf, 0, total_length);
+			    snprintf(buf, total_length, "%s%s", pathname, dir_p->d_name);
+			
+			    struct stat statbuf = {0};
+			    if (stat(buf, &statbuf) == -1) HANDLE_ERROR("ERROR! CANNOT RETRIEVE STAT FOR FILE - DIR LOOKUP");
+
+                if (statbuf.st_mtime > most_recent_time){
+                    
+                    // Keeping track of most recent "Last modified time" and filename
+                    most_recent_time = statbuf.st_mtime;
+                    memset(temp_filename, 0, 256);
+                    snprintf(temp_filename, 256, "%s", dir_p->d_name);
+                    
+                    // Retrieve version number
+                    char *subString;
+                    subString = strtok(dir_p->d_name,"_");      // First token should be 'csaplogserver'
+                    version=atoi(strtok(NULL,"_"));             // Second token should be a number
+                }
+            }
+
+		}
+		
+		errno = 0;	
+		dir_p = readdir(directory);
+		if (dir_p == NULL && errno!=0) HANDLE_ERROR("ERROR! CANNOT READ NEXT ELEMENT OF DIR - DIR LOOKUP");
+	}
+
+
+    // If logfile not found, then create a new one with version 0
+    if (!log_exists){
+        memset(buf, 0, total_length);
+        snprintf(buf, total_length, "%s%s_%d", pathname, LOG_NAME, version);
+        fprintf(stdout, "Logfile not found, creating new one...\n\n");
+        fd = open(buf, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, 0644);
+        if (fd < 0) HANDLE_ERROR("ERROR! CANNOT CREATE FIRST LOG FILE - DIR LOOKUP");
+    }
+    else {
+        memset(buf, 0, total_length);
+        snprintf(buf, total_length, "%s%s_%d", pathname, LOG_NAME, version+1);
+        fprintf(stdout, "Logfile found, creating new version...\n\n");
+        fd = open(buf, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, 0644);
+        if (fd < 0) HANDLE_ERROR("ERROR! CANNOT CREATE MORE RECENT FILE - DIR LOOKUP");
+    }
+
+
+    // Free resources
+    free(temp_filename);
+    if (closedir(directory) == -1) HANDLE_ERROR("ERROR! CANNOT CLOSE DIRECTORY - DIR LOOKUP");
+
+    // Return opened fd
+    return fd;
+
 }
 
 
@@ -352,43 +440,33 @@ void main(int argc, char* argv[]){
     int logfile_fd;
     size_t total_length;
     char* path;
-
+    bool log_exists = false;
 
     // Compute total length of the path, allocate memory for the string and perform concatenation of "path/filename"
     if (isDefault || isCustom == 1) {
-        total_length = strlen(LOG_PATH) + strlen(LOG_NAME)+1;                       // Add +1 to total length for "/0"
+        total_length = strlen(LOG_PATH) + 256 + 1;                       // Add +1 to total length for "/0" and 256 for filename
         path = (char*) calloc(total_length, sizeof(char));
         if (path == NULL) HANDLE_ERROR("ERROR! DEFAULT PATH CALLOC - MAIN");
-        snprintf(path, total_length, "%s%s", LOG_PATH, LOG_NAME);
+        snprintf(path, total_length, "%s", LOG_PATH);
+        logfile_fd = directory_lookup(path, LOG_PATH, total_length);
     }
     else if (isCustom == 2) {
-        total_length = strlen(argv[1]) + strlen(LOG_NAME)+1;                       // Add +1 to total length for "/0"
+        total_length = strlen(argv[1]) + 256 + 1;                       // Add +1 to total length for "/0" and 256 for filename
         path = (char*) calloc(total_length, sizeof(char));
         if (path == NULL) HANDLE_ERROR("ERROR! CUSTOM PATH CALLOC - MAIN");
-        snprintf(path, total_length, "%s%s", argv[1], LOG_NAME);
+        snprintf(path, total_length, "%s", argv[1]);
+        logfile_fd = directory_lookup(path, argv[1], total_length);
     }
     else{
-        total_length = strlen(argv[2]) + strlen(LOG_NAME)+1;                       // Add +1 to total length for "/0"
+        total_length = strlen(argv[2]) + 256 + 1;                       // Add +1 to total length for "/0" and 256 for filename
         path = (char*) calloc(total_length, sizeof(char));
         if (path == NULL) HANDLE_ERROR("ERROR! CUSTOM PATH CALLOC - MAIN");
-        snprintf(path, total_length, "%s%s", argv[2], LOG_NAME);
+        snprintf(path, total_length, "%s", argv[2]);
+        logfile_fd = directory_lookup(path, argv[2], total_length);
     }
 
-    printf("\n\nLa path totale è %s\n\n\n", path);
-
-
-    // Opening fd in append to guarantee atomicity!!
-    logfile_fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, 0644);
-    if (logfile_fd < 0){
-        if(errno == EEXIST) {
-            fprintf(stderr, "WARNING! FILE %s ALREADY EXISTS, IT WILL BE OVERWRITTEN!\n", path);
-            logfile_fd = open(path, O_WRONLY | O_TRUNC | O_APPEND, 0644);
-        }else
-            HANDLE_ERROR("ERROR! CANNOT CREATE LOGFILE - MAIN");
-    }
-    
-    fprintf(stdout, "Created log file in %s\n", path);
-    free(path);
+    fprintf(stdout, "Contenuto di path = %s\n", path);
+	free(path);
 
 
 

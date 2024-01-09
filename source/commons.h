@@ -6,8 +6,11 @@
 #define SERVER_ADDRESS  "127.0.0.1"
 #define SERVER_PORT     10000
 #define MAX_CONN_QUEUE  5
+
 #define LOG_PATH        "./logs/"
-#define LOG_NAME        "csap_logserver"
+#define LOG_NAME        "csaplogserver"
+#define MAX_SIZE        1024
+
 #define QUIT_COMMAND    "QUIT\n"
 
 
@@ -18,6 +21,7 @@
 /* Functions declarations */
 void initiate_server_transmission(int socket_desc, int logfile_fd);
 void exit_procedure(int socket_desc, int logfile_fd);
+int directory_lookup(char* buf, char* pathname, int total_length);
 
 void initiate_client_transmission(int socket_desc);
 

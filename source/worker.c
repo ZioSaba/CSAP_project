@@ -95,7 +95,7 @@ void worker_connection_handler(int client_desc, struct sockaddr_in* client_addr,
         
         // Perform log on file
         msg_len = strlen(network_buf);
-        sprintf(file_buf, "Client %d said: ", client_ID);
+        sprintf(file_buf, "\nClient %d said: ", client_ID);
         strncat(file_buf, network_buf, msg_len);
         msg_len = strlen(file_buf);
         bytes_written = 0;
